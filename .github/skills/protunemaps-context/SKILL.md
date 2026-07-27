@@ -19,13 +19,14 @@ Use this skill when asked to:
 ## Current Source of Truth
 
 - Backlog plan: docs/sprint-backlog.md
+- Architecture baseline: docs/technical-architecture.md
 - Issue manifest: scripts/issues.json
 - Published issues: PTM-01 to PTM-18 in MrdjaMarko/ProTuneMaps
 - Project board: ProTuneMaps MVP Backlog
 
 ## Project Rules Snapshot
 
-- Architecture and stack are not defined yet.
+- Architecture and stack are defined in docs/technical-architecture.md.
 - Default to product requirements and delivery clarity.
 - Protect safety-critical paths:
   - compatibility gating

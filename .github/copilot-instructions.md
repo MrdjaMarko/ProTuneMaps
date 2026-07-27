@@ -7,14 +7,15 @@ ProTuneMaps is an ECU map marketplace and delivery workflow product focused on c
 ## Current Product Context
 
 - Product scope is MVP planning and backlog execution.
-- Architecture and technology stack are intentionally undefined.
+- Architecture and technology stack are defined in docs/technical-architecture.md.
 - Work must align with the backlog and acceptance criteria in docs/sprint-backlog.md.
 - GitHub Project source of truth: ProTuneMaps MVP Backlog (owner: MrdjaMarko).
 - Ticket set source of truth: PTM-01 through PTM-18 in repository issues.
 
 ## Working Rules
 
-- Do not assume or lock in backend/frontend/cloud architecture unless the user asks.
+- Use the approved architecture baseline unless the user explicitly requests a change.
+- For implementation asks, follow strict TDD: failing test first, minimal pass, refactor.
 - For implementation asks, map proposed work to one or more PTM issue IDs.
 - Keep outputs testable with explicit acceptance criteria and definition of done checks.
 - Prioritize trust and safety flows over growth extras:
@@ -56,5 +57,6 @@ ProTuneMaps is an ECU map marketplace and delivery workflow product focused on c
 ## Reference Files
 
 - docs/sprint-backlog.md
+- docs/technical-architecture.md
 - scripts/issues.json
 - scripts/publish-backlog.ps1
