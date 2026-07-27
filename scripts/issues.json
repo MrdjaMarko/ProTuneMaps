@@ -1,0 +1,146 @@
+[
+  {
+    "id": "PTM-01",
+    "title": "PTM-01 Buyer signup/login/password reset",
+    "labels": ["type:feature", "area:auth", "priority:P0", "sprint:1"],
+    "points": 5,
+    "dependsOn": [],
+    "body": "## Story\nAs an enthusiast, I want to create an account and log in so I can purchase and manage maps.\n\n## Acceptance Criteria\n- User can sign up with email and password.\n- Email verification required before purchase.\n- User can log in, log out, and reset password.\n- Session persists across refresh.\n- Failed login messages do not reveal account existence.\n\n## Notes\n- Priority: P0\n- Story points: 5"
+  },
+  {
+    "id": "PTM-02",
+    "title": "PTM-02 Tuner role request and verification workflow",
+    "labels": ["type:feature", "area:auth", "area:tuner", "priority:P0", "sprint:1"],
+    "points": 3,
+    "dependsOn": ["PTM-01"],
+    "body": "## Story\nAs a tuner, I want a seller account so I can publish maps.\n\n## Acceptance Criteria\n- User can request tuner role from profile settings.\n- Tuner profile requires display name, location, and contact email.\n- New tuner accounts are marked unverified by default.\n- Only tuner role users can create listings.\n- Admin can approve or reject tuner verification.\n\n## Dependencies\n- PTM-01\n\n## Notes\n- Priority: P0\n- Story points: 3"
+  },
+  {
+    "id": "PTM-03",
+    "title": "PTM-03 Vehicle setup CRUD",
+    "labels": ["type:feature", "area:compatibility", "priority:P0", "sprint:1"],
+    "points": 8,
+    "dependsOn": ["PTM-01"],
+    "body": "## Story\nAs a buyer, I want to save my exact vehicle setup so compatibility checks are reliable.\n\n## Acceptance Criteria\n- Setup includes make, model, year, engine, ECU ID, transmission, fuel type, installed mods.\n- Required fields are validated before save.\n- Buyer can save multiple setups.\n- Buyer can edit and delete setups.\n- Setup is available to compatibility logic.\n\n## Dependencies\n- PTM-01\n\n## Notes\n- Priority: P0\n- Story points: 8"
+  },
+  {
+    "id": "PTM-04",
+    "title": "PTM-04 Compatibility evaluator and result badges",
+    "labels": ["type:feature", "area:compatibility", "priority:P0", "sprint:1"],
+    "points": 8,
+    "dependsOn": ["PTM-03"],
+    "body": "## Story\nAs a buyer, I want clear compatibility outcomes so I avoid unsafe purchases.\n\n## Acceptance Criteria\n- Results show Compatible, Partially Compatible, Not Compatible.\n- Incompatible listings cannot be purchased.\n- Partial compatibility displays missing requirements.\n- Decision is deterministic from saved rules.\n- Compatibility output is exposed to listing/search pages.\n\n## Dependencies\n- PTM-03\n\n## Notes\n- Priority: P0\n- Story points: 8"
+  },
+  {
+    "id": "PTM-05",
+    "title": "PTM-05 Marketplace search and filters",
+    "labels": ["type:feature", "area:marketplace", "priority:P0", "sprint:1"],
+    "points": 5,
+    "dependsOn": ["PTM-04"],
+    "body": "## Story\nAs a buyer, I want to find maps quickly using filters tied to my setup.\n\n## Acceptance Criteria\n- Search supports make/model/engine/fuel/stage filters.\n- Results show compatibility badges for selected setup.\n- Sorting by relevance and newest is available.\n- Listing cards include tuner, stage, price, and verification status.\n- Search response p95 under 1.5 seconds at MVP load.\n\n## Dependencies\n- PTM-04\n\n## Notes\n- Priority: P0\n- Story points: 5"
+  },
+  {
+    "id": "PTM-06",
+    "title": "PTM-06 Public tuner profile and trust metrics shell",
+    "labels": ["type:feature", "area:tuner", "priority:P0", "sprint:2"],
+    "points": 5,
+    "dependsOn": ["PTM-02"],
+    "body": "## Story\nAs a buyer, I want to evaluate tuner credibility before purchasing.\n\n## Acceptance Criteria\n- Public profile includes bio, verification status, supported platforms.\n- Profile lists published maps.\n- Trust metric placeholders for installs, average rating, support response median.\n- Unverified status is clearly marked.\n- Profile is shareable via stable URL.\n\n## Dependencies\n- PTM-02\n\n## Notes\n- Priority: P0\n- Story points: 5"
+  },
+  {
+    "id": "PTM-07",
+    "title": "PTM-07 Map listing create/edit/publish with validation",
+    "labels": ["type:feature", "area:listings", "priority:P0", "sprint:2"],
+    "points": 8,
+    "dependsOn": ["PTM-02", "PTM-04"],
+    "body": "## Story\nAs a tuner, I want to publish map listings with complete requirements and expected outcomes.\n\n## Acceptance Criteria\n- Required fields: title, supported vehicle params, stage, fuel, required mods, price.\n- Optional fields: dyno images, evidence notes, known limitations.\n- Save as draft or publish.\n- Published listings appear in search within 1 minute.\n- Invalid compatibility metadata blocks publish.\n\n## Dependencies\n- PTM-02\n- PTM-04\n\n## Notes\n- Priority: P0\n- Story points: 8"
+  },
+  {
+    "id": "PTM-08",
+    "title": "PTM-08 Map version upload and changelog history",
+    "labels": ["type:feature", "area:listings", "area:delivery", "priority:P0", "sprint:2"],
+    "points": 8,
+    "dependsOn": ["PTM-07"],
+    "body": "## Story\nAs a tuner, I want versioned map uploads so customers receive traceable revisions.\n\n## Acceptance Criteria\n- Tuner can upload new version with semantic label.\n- Each version requires changelog notes.\n- Version history is visible on listing page.\n- Order entitlements remain bound to purchased version unless explicitly upgraded.\n- Download page shows exact version and timestamp.\n\n## Dependencies\n- PTM-07\n\n## Notes\n- Priority: P0\n- Story points: 8"
+  },
+  {
+    "id": "PTM-09",
+    "title": "PTM-09 Listing moderation controls for admins",
+    "labels": ["type:feature", "area:admin", "area:listings", "priority:P0", "sprint:2"],
+    "points": 3,
+    "dependsOn": ["PTM-07"],
+    "body": "## Story\nAs an admin, I want moderation tools so policy-violating listings can be controlled quickly.\n\n## Acceptance Criteria\n- Admin can unpublish listing with reason.\n- Admin can re-publish listing after remediation.\n- Moderation actions are audit logged with actor and timestamp.\n- Affected tuner receives notification.\n- Unpublished listings are removed from marketplace views.\n\n## Dependencies\n- PTM-07\n\n## Notes\n- Priority: P0\n- Story points: 3"
+  },
+  {
+    "id": "PTM-10",
+    "title": "PTM-10 Checkout with compatibility gate and terms acceptance",
+    "labels": ["type:feature", "area:checkout", "priority:P0", "sprint:3"],
+    "points": 8,
+    "dependsOn": ["PTM-05", "PTM-08"],
+    "body": "## Story\nAs a buyer, I want secure checkout with compatibility enforcement so unsafe purchases are prevented.\n\n## Acceptance Criteria\n- Checkout re-validates compatibility before payment attempt.\n- Buyer must accept license and VIN policy checkbox.\n- Payment attempt cannot proceed if required terms are unchecked.\n- Order summary includes map version and setup context.\n- Purchase button disabled for incompatible configurations.\n\n## Dependencies\n- PTM-05\n- PTM-08\n\n## Notes\n- Priority: P0\n- Story points: 8"
+  },
+  {
+    "id": "PTM-11",
+    "title": "PTM-11 Payment events and order entitlement",
+    "labels": ["type:feature", "area:checkout", "area:orders", "priority:P0", "sprint:3"],
+    "points": 5,
+    "dependsOn": ["PTM-10"],
+    "body": "## Story\nAs a platform, I need robust payment and entitlement events so downloads are unlocked only after valid payment.\n\n## Acceptance Criteria\n- Successful payment creates order and entitlement records.\n- Failed payment creates no entitlement record.\n- Payment events are idempotent.\n- Confirmation email sent on successful purchase.\n- All payment transitions are audit logged.\n\n## Dependencies\n- PTM-10\n\n## Notes\n- Priority: P0\n- Story points: 5"
+  },
+  {
+    "id": "PTM-12",
+    "title": "PTM-12 Signed download links, checksum, and download audit log",
+    "labels": ["type:feature", "area:delivery", "priority:P0", "sprint:3"],
+    "points": 5,
+    "dependsOn": ["PTM-11"],
+    "body": "## Story\nAs a buyer, I want secure downloadable files with integrity checks so I can install confidently.\n\n## Acceptance Criteria\n- Download links are signed and time-limited.\n- Download page displays checksum/hash.\n- Buyer can re-download from valid entitlement.\n- Each download event is logged with order/user/version context.\n- Unauthorized access attempts are denied and logged.\n\n## Dependencies\n- PTM-11\n\n## Notes\n- Priority: P0\n- Story points: 5"
+  },
+  {
+    "id": "PTM-13",
+    "title": "PTM-13 Order history and download center",
+    "labels": ["type:feature", "area:orders", "area:delivery", "priority:P0", "sprint:3"],
+    "points": 3,
+    "dependsOn": ["PTM-11", "PTM-12"],
+    "body": "## Story\nAs a buyer, I want order history and access to purchased files in one place.\n\n## Acceptance Criteria\n- Buyer can view past orders with status and timestamps.\n- Each order links to map version and setup snapshot.\n- Download action available when entitlement exists.\n- Non-entitled orders show clear error state.\n- Order list paginates for larger history.\n\n## Dependencies\n- PTM-11\n- PTM-12\n\n## Notes\n- Priority: P0\n- Story points: 3"
+  },
+  {
+    "id": "PTM-14",
+    "title": "PTM-14 Support ticket creation tied to order/setup/version",
+    "labels": ["type:feature", "area:support", "priority:P0", "sprint:4"],
+    "points": 8,
+    "dependsOn": ["PTM-11", "PTM-13"],
+    "body": "## Story\nAs a buyer, I want support tickets linked to my purchase and setup so troubleshooting is contextual.\n\n## Acceptance Criteria\n- Ticket form auto-attaches order ID, map version, and selected setup.\n- Buyer can choose issue type: install, drivability, performance, refund.\n- Tuner receives notification on ticket create.\n- Ticket has status lifecycle (Open, Waiting on Buyer, Resolved, Closed).\n- Non-purchasers cannot open map-specific tickets.\n\n## Dependencies\n- PTM-11\n- PTM-13\n\n## Notes\n- Priority: P0\n- Story points: 8"
+  },
+  {
+    "id": "PTM-15",
+    "title": "PTM-15 Ticket thread, status lifecycle, and notifications",
+    "labels": ["type:feature", "area:support", "priority:P0", "sprint:4"],
+    "points": 5,
+    "dependsOn": ["PTM-14"],
+    "body": "## Story\nAs a buyer and tuner, I want threaded ticket communication so revisions and status are clear.\n\n## Acceptance Criteria\n- Buyer and tuner can exchange threaded messages.\n- Status updates are visible on ticket timeline.\n- Email notifications fire for new messages and status changes.\n- Ticket timeline includes who changed what and when.\n- Closed tickets are read-only unless reopened by authorized role.\n\n## Dependencies\n- PTM-14\n\n## Notes\n- Priority: P0\n- Story points: 5"
+  },
+  {
+    "id": "PTM-16",
+    "title": "PTM-16 Admin dashboard for tuners/listings/orders/tickets/reviews",
+    "labels": ["type:feature", "area:admin", "priority:P0", "sprint:4"],
+    "points": 8,
+    "dependsOn": ["PTM-09", "PTM-15"],
+    "body": "## Story\nAs an admin, I want cross-system operational visibility and controls to keep trust high.\n\n## Acceptance Criteria\n- Dashboard includes users/tuners/listings/orders/tickets/reviews views.\n- Admin can verify/unverify tuner accounts.\n- Admin can suspend accounts and unpublish listings.\n- Admin can flag/refine refund workflow status.\n- All admin actions are audit logged.\n\n## Dependencies\n- PTM-09\n- PTM-15\n\n## Notes\n- Priority: P0\n- Story points: 8"
+  },
+  {
+    "id": "PTM-17",
+    "title": "PTM-17 Verified-buyer ratings and reviews",
+    "labels": ["type:feature", "area:reviews", "priority:P1", "sprint:4"],
+    "points": 5,
+    "dependsOn": ["PTM-13"],
+    "body": "## Story\nAs a buyer, I want to rate purchased maps so others can evaluate real outcomes.\n\n## Acceptance Criteria\n- Only verified purchasers can review that map listing.\n- Rating range is 1 to 5 with optional text.\n- One active review per order; edits allowed.\n- Reviews roll up into listing/tuner aggregate rating.\n- Admin can hide policy-violating reviews with reason log.\n\n## Dependencies\n- PTM-13\n\n## Notes\n- Priority: P1\n- Story points: 5"
+  },
+  {
+    "id": "PTM-18",
+    "title": "PTM-18 MVP observability and launch dashboard metrics",
+    "labels": ["type:feature", "area:platform", "priority:P0", "sprint:4"],
+    "points": 3,
+    "dependsOn": ["PTM-10", "PTM-12", "PTM-15"],
+    "body": "## Story\nAs a product team, we need core telemetry so we can validate MVP health and conversion.\n\n## Acceptance Criteria\n- Track conversion from compatible listing view to purchase.\n- Track refund/dispute rate and ticket volume.\n- Track median first support response time.\n- Track download failures and payment failures.\n- Dashboard is visible to admin users with daily trend view.\n\n## Dependencies\n- PTM-10\n- PTM-12\n- PTM-15\n\n## Notes\n- Priority: P0\n- Story points: 3"
+  }
+]
