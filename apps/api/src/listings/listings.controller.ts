@@ -28,6 +28,9 @@ export class ListingsController {
     @Body()
     body: {
       title?: string;
+      stage?: string;
+      priceAmount?: number;
+      priceCurrency?: string;
       requirements?: {
         make?: string;
         model?: string;

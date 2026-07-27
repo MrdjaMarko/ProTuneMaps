@@ -14,6 +14,11 @@ interface TunerProfile {
   verified: boolean;
 }
 
+interface TunerSummary {
+  displayName: string;
+  verificationStatus: VerificationStatus;
+}
+
 @Injectable()
 export class TunerService {
   private readonly profilesById = new Map<string, TunerProfile>();
@@ -82,5 +87,28 @@ export class TunerService {
     profile.verified = false;
     this.authService.updateUserRole(profile.userId, "buyer");
     return { profile };
+  }
+
+  getTunerSummary(userId: string): TunerSummary {
+    const profileId = this.profileIdByUserId.get(userId);
+    if (!profileId) {
+      return {
+        displayName: "Unverified tuner",
+        verificationStatus: "rejected"
+      };
+    }
+
+    const profile = this.profilesById.get(profileId);
+    if (!profile) {
+      return {
+        displayName: "Unverified tuner",
+        verificationStatus: "rejected"
+      };
+    }
+
+    return {
+      displayName: profile.displayName,
+      verificationStatus: profile.verificationStatus
+    };
   }
 }
