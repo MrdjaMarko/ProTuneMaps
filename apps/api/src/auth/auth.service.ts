@@ -3,7 +3,7 @@ import argon2 from "argon2";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "node:crypto";
 
-type UserRole = "buyer" | "tuner" | "admin";
+export type UserRole = "buyer" | "tuner" | "admin";
 
 interface UserRecord {
   id: string;
@@ -31,6 +31,7 @@ interface LoginResult {
     id: string;
     email: string;
     emailVerified: boolean;
+    role: UserRole;
   };
   sessionToken: string;
 }
@@ -100,10 +101,20 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
-        emailVerified: user.emailVerified
+        emailVerified: user.emailVerified,
+        role: user.role
       },
       sessionToken
     };
+  }
+
+  updateUserRole(userId: string, role: UserRole): void {
+    const user = this.usersById.get(userId);
+    if (!user) {
+      throw new BadRequestException("User not found");
+    }
+
+    user.role = role;
   }
 
   verifyEmail(token: string): void {
