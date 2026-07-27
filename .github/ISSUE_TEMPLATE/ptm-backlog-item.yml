@@ -1,0 +1,131 @@
+name: PTM Backlog Item
+description: Standard ProTuneMaps backlog issue format for user stories, acceptance criteria, and dependencies.
+title: "PTM-XX Short title"
+labels:
+  - type:feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for all product backlog issues.
+
+        Rules:
+        - Keep architecture and stack choices out unless explicitly requested.
+        - Map to existing PTM IDs when possible.
+        - Write testable acceptance criteria.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope Classification
+      description: Classify the item against current roadmap scope.
+      options:
+        - MVP P0
+        - MVP P1
+        - Post-MVP
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0
+        - P1
+        - P2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: sprint
+    attributes:
+      label: Sprint Recommendation
+      options:
+        - Sprint 1
+        - Sprint 2
+        - Sprint 3
+        - Sprint 4
+        - Backlog
+    validations:
+      required: true
+
+  - type: input
+    id: issue-id
+    attributes:
+      label: PTM Issue ID
+      description: Existing ID like PTM-07, or Proposed for new work.
+      placeholder: PTM-XX
+    validations:
+      required: true
+
+  - type: textarea
+    id: user-story
+    attributes:
+      label: User Story
+      description: Use As a / I want / so that format.
+      placeholder: |
+        As a [role],
+        I want [capability],
+        so that [outcome].
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: One criterion per line, each objectively testable.
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+        - [ ] Criterion 3
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: List issue IDs and blocking context.
+      placeholder: |
+        - PTM-03
+        - PTM-04
+    validations:
+      required: true
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and Assumptions
+      description: Capture delivery risk and assumptions that may change scope.
+      placeholder: |
+        - Risk:
+        - Assumption:
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of Scope
+      description: Explicitly call out what this issue will not include.
+      placeholder: |
+        - Not included:
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: definition-of-done
+    attributes:
+      label: Definition of Done
+      description: Confirm all release-readiness checks.
+      options:
+        - label: Acceptance criteria are complete and testable.
+          required: true
+        - label: Dependencies and blockers are listed.
+          required: true
+        - label: Scope is mapped to MVP P0, MVP P1, or Post-MVP.
+          required: true
+        - label: Risk and out-of-scope statements are captured.
+          required: true

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: ProTuneMaps backlog and planning guide
+    url: https://github.com/MrdjaMarko/ProTuneMaps/blob/main/docs/sprint-backlog.md
+    about: Review scope, PTM IDs, and acceptance criteria standards before opening a new issue.
