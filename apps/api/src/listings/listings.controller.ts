@@ -3,7 +3,9 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  HttpCode,
   Inject,
+  Patch,
   Param,
   Post,
   Query,
@@ -31,6 +33,10 @@ export class ListingsController {
       stage?: string;
       priceAmount?: number;
       priceCurrency?: string;
+      saveAsDraft?: boolean;
+      dynoImages?: string[];
+      evidenceNotes?: string;
+      knownLimitations?: string;
       requirements?: {
         make?: string;
         model?: string;
@@ -53,6 +59,57 @@ export class ListingsController {
     return {
       created: true,
       listing
+    };
+  }
+
+  @Patch(":listingId")
+  @UseGuards(AuthGuard)
+  updateListing(
+    @Req() request: { currentUserId: string },
+    @Param("listingId") listingId: string,
+    @Body()
+    body: {
+      title?: string;
+      stage?: string;
+      priceAmount?: number;
+      priceCurrency?: string;
+      dynoImages?: string[];
+      evidenceNotes?: string;
+      knownLimitations?: string;
+      requirements?: {
+        make?: string;
+        model?: string;
+        engine?: string;
+        ecuId?: string;
+        transmission?: string;
+        fuelType?: string;
+        requiredMods?: string[];
+      };
+    }
+  ) {
+    const currentUser = this.authService.getUserById(request.currentUserId);
+
+    if (currentUser.role !== "tuner") {
+      throw new ForbiddenException("Tuner role required");
+    }
+
+    return {
+      listing: this.listingsService.update(request.currentUserId, listingId, body)
+    };
+  }
+
+  @Post(":listingId/publish")
+  @HttpCode(200)
+  @UseGuards(AuthGuard)
+  publishListing(@Req() request: { currentUserId: string }, @Param("listingId") listingId: string) {
+    const currentUser = this.authService.getUserById(request.currentUserId);
+
+    if (currentUser.role !== "tuner") {
+      throw new ForbiddenException("Tuner role required");
+    }
+
+    return {
+      listing: this.listingsService.publish(request.currentUserId, listingId)
     };
   }
 

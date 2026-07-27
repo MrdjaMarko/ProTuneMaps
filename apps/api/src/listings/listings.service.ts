@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import {
   CompatibilityService,
@@ -18,6 +18,10 @@ interface ListingRecord {
   stage: string;
   priceAmount: number;
   priceCurrency: string;
+  publishStatus: "draft" | "published";
+  dynoImages: string[];
+  evidenceNotes: string;
+  knownLimitations: string;
   createdAt: number;
   requirements: ListingRequirements;
 }
@@ -27,6 +31,10 @@ interface CreateListingInput {
   stage?: string;
   priceAmount?: number;
   priceCurrency?: string;
+  saveAsDraft?: boolean;
+  dynoImages?: string[];
+  evidenceNotes?: string;
+  knownLimitations?: string;
   requirements?: Partial<ListingRequirements>;
 }
 
@@ -48,6 +56,17 @@ interface PublishedMapCard {
   priceCurrency: string;
 }
 
+interface UpdateListingInput {
+  title?: string;
+  stage?: string;
+  priceAmount?: number;
+  priceCurrency?: string;
+  dynoImages?: string[];
+  evidenceNotes?: string;
+  knownLimitations?: string;
+  requirements?: Partial<ListingRequirements>;
+}
+
 @Injectable()
 export class ListingsService {
   private readonly listingsById = new Map<string, ListingRecord>();
@@ -61,30 +80,129 @@ export class ListingsService {
   create(tunerUserId: string, input: CreateListingInput): ListingRecord {
     const tunerSummary = this.tunerService.getTunerSummary(tunerUserId);
 
+    const normalizedRequirements: ListingRequirements = {
+      make: input.requirements?.make?.trim(),
+      model: input.requirements?.model?.trim(),
+      engine: input.requirements?.engine?.trim(),
+      ecuId: input.requirements?.ecuId?.trim(),
+      transmission: input.requirements?.transmission?.trim(),
+      fuelType: input.requirements?.fuelType?.trim(),
+      requiredMods: (input.requirements?.requiredMods ?? []).map((mod) => mod.trim()).filter((mod) => mod.length > 0)
+    };
+
+    const normalizedTitle = (input.title?.trim() || "Untitled").trim();
+    const normalizedStage = (input.stage?.trim() || "Stage 1").trim();
+    const normalizedPriceAmount = input.priceAmount ?? 0;
+    const normalizedPriceCurrency = (input.priceCurrency?.trim() || "EUR").trim();
+    const normalizedDynoImages = (input.dynoImages ?? []).map((image) => image.trim()).filter((image) => image.length > 0);
+    const normalizedEvidenceNotes = input.evidenceNotes?.trim() ?? "";
+    const normalizedKnownLimitations = input.knownLimitations?.trim() ?? "";
+
+    const missingFields = this.getPublishMissingFields({
+      title: normalizedTitle,
+      stage: normalizedStage,
+      priceAmount: normalizedPriceAmount,
+      requirements: normalizedRequirements
+    });
+
+    const publishStatus: "draft" | "published" = input.saveAsDraft || missingFields.length > 0 ? "draft" : "published";
+
     const listing: ListingRecord = {
       id: randomUUID(),
       tunerUserId,
       tunerDisplayName: tunerSummary.displayName,
       tunerVerificationStatus: tunerSummary.verificationStatus,
-      title: (input.title?.trim() || "Untitled").trim(),
-      stage: (input.stage?.trim() || "Stage 1").trim(),
-      priceAmount: input.priceAmount ?? 0,
-      priceCurrency: (input.priceCurrency?.trim() || "EUR").trim(),
+      title: normalizedTitle,
+      stage: normalizedStage,
+      priceAmount: normalizedPriceAmount,
+      priceCurrency: normalizedPriceCurrency,
+      publishStatus,
+      dynoImages: normalizedDynoImages,
+      evidenceNotes: normalizedEvidenceNotes,
+      knownLimitations: normalizedKnownLimitations,
       createdAt: Date.now(),
-      requirements: {
-        make: input.requirements?.make?.trim(),
-        model: input.requirements?.model?.trim(),
-        engine: input.requirements?.engine?.trim(),
-        ecuId: input.requirements?.ecuId?.trim(),
-        transmission: input.requirements?.transmission?.trim(),
-        fuelType: input.requirements?.fuelType?.trim(),
-        requiredMods: (input.requirements?.requiredMods ?? [])
-          .map((mod) => mod.trim())
-          .filter((mod) => mod.length > 0)
-      }
+      requirements: normalizedRequirements
     };
 
     this.listingsById.set(listing.id, listing);
+    return listing;
+  }
+
+  update(tunerUserId: string, listingId: string, input: UpdateListingInput): ListingRecord {
+    const listing = this.getOwnedListing(tunerUserId, listingId);
+
+    if (typeof input.title !== "undefined") {
+      listing.title = input.title.trim() || listing.title;
+    }
+
+    if (typeof input.stage !== "undefined") {
+      listing.stage = input.stage.trim() || listing.stage;
+    }
+
+    if (typeof input.priceAmount !== "undefined") {
+      listing.priceAmount = input.priceAmount;
+    }
+
+    if (typeof input.priceCurrency !== "undefined") {
+      listing.priceCurrency = input.priceCurrency.trim() || listing.priceCurrency;
+    }
+
+    if (typeof input.dynoImages !== "undefined") {
+      listing.dynoImages = input.dynoImages.map((image) => image.trim()).filter((image) => image.length > 0);
+    }
+
+    if (typeof input.evidenceNotes !== "undefined") {
+      listing.evidenceNotes = input.evidenceNotes.trim();
+    }
+
+    if (typeof input.knownLimitations !== "undefined") {
+      listing.knownLimitations = input.knownLimitations.trim();
+    }
+
+    if (input.requirements) {
+      if (typeof input.requirements.make !== "undefined") {
+        listing.requirements.make = input.requirements.make?.trim();
+      }
+      if (typeof input.requirements.model !== "undefined") {
+        listing.requirements.model = input.requirements.model?.trim();
+      }
+      if (typeof input.requirements.engine !== "undefined") {
+        listing.requirements.engine = input.requirements.engine?.trim();
+      }
+      if (typeof input.requirements.ecuId !== "undefined") {
+        listing.requirements.ecuId = input.requirements.ecuId?.trim();
+      }
+      if (typeof input.requirements.transmission !== "undefined") {
+        listing.requirements.transmission = input.requirements.transmission?.trim();
+      }
+      if (typeof input.requirements.fuelType !== "undefined") {
+        listing.requirements.fuelType = input.requirements.fuelType?.trim();
+      }
+      if (typeof input.requirements.requiredMods !== "undefined") {
+        listing.requirements.requiredMods = input.requirements.requiredMods
+          .map((mod) => mod.trim())
+          .filter((mod) => mod.length > 0);
+      }
+    }
+
+    return listing;
+  }
+
+  publish(tunerUserId: string, listingId: string): ListingRecord {
+    const listing = this.getOwnedListing(tunerUserId, listingId);
+
+    const missingFields = this.getPublishMissingFields({
+      title: listing.title,
+      stage: listing.stage,
+      priceAmount: listing.priceAmount,
+      requirements: listing.requirements
+    });
+
+    if (missingFields.length > 0) {
+      throw new BadRequestException(`Cannot publish: required fields missing or invalid (${missingFields.join(", ")})`);
+    }
+
+    listing.publishStatus = "published";
     return listing;
   }
 
@@ -104,6 +222,7 @@ export class ListingsService {
     const normalizedStage = query.stage?.trim().toLowerCase();
 
     const filtered = [...this.listingsById.values()]
+      .filter((listing) => listing.publishStatus === "published")
       .filter((listing) => {
         if (normalizedMake && listing.requirements.make?.trim().toLowerCase() !== normalizedMake) {
           return false;
@@ -175,7 +294,7 @@ export class ListingsService {
 
   getPublishedMapsByTunerUserId(tunerUserId: string): PublishedMapCard[] {
     return [...this.listingsById.values()]
-      .filter((listing) => listing.tunerUserId === tunerUserId)
+      .filter((listing) => listing.tunerUserId === tunerUserId && listing.publishStatus === "published")
       .sort((a, b) => b.createdAt - a.createdAt)
       .map((listing) => ({
         id: listing.id,
@@ -196,5 +315,57 @@ export class ListingsService {
     }
 
     return 1;
+  }
+
+  private getOwnedListing(tunerUserId: string, listingId: string): ListingRecord {
+    const listing = this.listingsById.get(listingId);
+    if (!listing) {
+      throw new NotFoundException("Listing not found");
+    }
+
+    if (listing.tunerUserId !== tunerUserId) {
+      throw new ForbiddenException("Listing ownership required");
+    }
+
+    return listing;
+  }
+
+  private getPublishMissingFields(input: {
+    title: string;
+    stage: string;
+    priceAmount: number;
+    requirements: ListingRequirements;
+  }): string[] {
+    const missingFields: string[] = [];
+
+    if (!input.title.trim()) {
+      missingFields.push("title");
+    }
+
+    if (!input.stage.trim()) {
+      missingFields.push("stage");
+    }
+
+    if (typeof input.priceAmount !== "number" || Number.isNaN(input.priceAmount) || input.priceAmount <= 0) {
+      missingFields.push("priceAmount");
+    }
+
+    if (!input.requirements.make?.trim()) {
+      missingFields.push("requirements.make");
+    }
+    if (!input.requirements.model?.trim()) {
+      missingFields.push("requirements.model");
+    }
+    if (!input.requirements.engine?.trim()) {
+      missingFields.push("requirements.engine");
+    }
+    if (!input.requirements.ecuId?.trim()) {
+      missingFields.push("requirements.ecuId");
+    }
+    if (!input.requirements.fuelType?.trim()) {
+      missingFields.push("requirements.fuelType");
+    }
+
+    return missingFields;
   }
 }
