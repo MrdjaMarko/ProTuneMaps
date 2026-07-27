@@ -48,11 +48,12 @@ foreach ($label in $labelsToEnsure) {
 
 $issuesPath = Join-Path $PSScriptRoot "issues.json"
 $issues = Get-Content $issuesPath -Raw | ConvertFrom-Json
+$existingIssues = gh issue list --repo "$Owner/$Repo" --state all --limit 500 --json number,title | ConvertFrom-Json
 
 $createdIssues = @()
 
 foreach ($issue in $issues) {
-    $existingIssue = gh issue list --repo "$Owner/$Repo" --search "in:title \"$($issue.title)\"" --json number,title --limit 10 | ConvertFrom-Json |
+    $existingIssue = $existingIssues |
         Where-Object { $_.title -eq $issue.title } |
         Select-Object -First 1
 
@@ -65,12 +66,27 @@ foreach ($issue in $issues) {
         continue
     }
 
-    $labels = $issue.labels -join ","
-    $created = gh issue create --repo "$Owner/$Repo" --title $issue.title --body $issue.body --label $labels --json number,title,url | ConvertFrom-Json
+    $labelArgs = @()
+    foreach ($label in $issue.labels) {
+        $labelArgs += @("--label", $label)
+    }
+
+    $createdUrl = gh issue create --repo "$Owner/$Repo" --title $issue.title --body $issue.body @labelArgs
+    if ($createdUrl -match "/issues/(\d+)$") {
+        $issueNumber = [int]$Matches[1]
+    } else {
+        throw "Could not parse issue number from output: $createdUrl"
+    }
+
+    $existingIssues += [PSCustomObject]@{
+        number = $issueNumber
+        title = $issue.title
+    }
+
     $createdIssues += [PSCustomObject]@{
         id = $issue.id
-        number = $created.number
-        title = $created.title
+        number = $issueNumber
+        title = $issue.title
     }
 }
 
