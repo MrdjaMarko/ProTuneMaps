@@ -10,6 +10,8 @@ interface TunerProfile {
   displayName: string;
   businessLocation: string;
   contactEmail: string;
+  bio: string;
+  supportedPlatforms: string[];
   verificationStatus: VerificationStatus;
   verified: boolean;
 }
@@ -26,10 +28,21 @@ export class TunerService {
 
   constructor(@Inject(AuthService) private readonly authService: AuthService) {}
 
-  requestVerification(userId: string, body: { displayName: string; businessLocation: string; contactEmail: string }) {
+  requestVerification(
+    userId: string,
+    body: {
+      displayName: string;
+      businessLocation: string;
+      contactEmail: string;
+      bio?: string;
+      supportedPlatforms?: string[];
+    }
+  ) {
     const displayName = body.displayName?.trim();
     const businessLocation = body.businessLocation?.trim();
     const contactEmail = body.contactEmail?.trim().toLowerCase();
+    const bio = body.bio?.trim() ?? "";
+    const supportedPlatforms = (body.supportedPlatforms ?? []).map((platform) => platform.trim()).filter((platform) => platform.length > 0);
 
     if (!displayName || !businessLocation || !contactEmail || !contactEmail.includes("@")) {
       throw new BadRequestException("Display name, location, and contact email are required");
@@ -42,6 +55,8 @@ export class TunerService {
         existing.displayName = displayName;
         existing.businessLocation = businessLocation;
         existing.contactEmail = contactEmail;
+        existing.bio = bio;
+        existing.supportedPlatforms = supportedPlatforms;
         existing.verificationStatus = "pending";
         existing.verified = false;
         this.authService.updateUserRole(userId, "buyer");
@@ -55,6 +70,8 @@ export class TunerService {
       displayName,
       businessLocation,
       contactEmail,
+      bio,
+      supportedPlatforms,
       verificationStatus: "pending",
       verified: false
     };
@@ -109,6 +126,41 @@ export class TunerService {
     return {
       displayName: profile.displayName,
       verificationStatus: profile.verificationStatus
+    };
+  }
+
+  getPublicProfile(profileId: string): {
+    id: string;
+    userId: string;
+    displayName: string;
+    bio: string;
+    supportedPlatforms: string[];
+    verificationStatus: VerificationStatus;
+    verificationLabel: string;
+    trustMetrics: {
+      installs: number;
+      averageRating: number | null;
+      supportResponseMedianHours: number | null;
+    };
+  } {
+    const profile = this.profilesById.get(profileId);
+    if (!profile) {
+      throw new NotFoundException("Tuner profile not found");
+    }
+
+    return {
+      id: profile.id,
+      userId: profile.userId,
+      displayName: profile.displayName,
+      bio: profile.bio,
+      supportedPlatforms: profile.supportedPlatforms,
+      verificationStatus: profile.verificationStatus,
+      verificationLabel: profile.verificationStatus === "approved" ? "Verified" : "Unverified",
+      trustMetrics: {
+        installs: 0,
+        averageRating: null,
+        supportResponseMedianHours: null
+      }
     };
   }
 }

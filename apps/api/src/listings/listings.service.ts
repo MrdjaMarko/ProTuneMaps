@@ -40,6 +40,14 @@ interface MarketplaceSearchQuery {
   sort?: "relevance" | "newest";
 }
 
+interface PublishedMapCard {
+  id: string;
+  title: string;
+  stage: string;
+  priceAmount: number;
+  priceCurrency: string;
+}
+
 @Injectable()
 export class ListingsService {
   private readonly listingsById = new Map<string, ListingRecord>();
@@ -163,6 +171,19 @@ export class ListingsService {
       canPurchase: compatibility.status !== "Not Compatible",
       compatibility
     };
+  }
+
+  getPublishedMapsByTunerUserId(tunerUserId: string): PublishedMapCard[] {
+    return [...this.listingsById.values()]
+      .filter((listing) => listing.tunerUserId === tunerUserId)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((listing) => ({
+        id: listing.id,
+        title: listing.title,
+        stage: listing.stage,
+        priceAmount: listing.priceAmount,
+        priceCurrency: listing.priceCurrency
+      }));
   }
 
   private compatibilityScore(status: CompatibilityStatus): number {

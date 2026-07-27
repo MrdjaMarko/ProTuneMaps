@@ -5,11 +5,12 @@ import { TunerModule } from "../tuner/tuner.module";
 import { VehicleSetupsModule } from "../vehicle-setups/vehicle-setups.module";
 import { ListingsController } from "./listings.controller";
 import { MarketplaceController } from "./marketplace.controller";
+import { PublicTunerProfileController } from "./public-tuner-profile.controller";
 import { ListingsService } from "./listings.service";
 
 @Module({
   imports: [AuthModule, VehicleSetupsModule, CompatibilityModule, TunerModule],
-  controllers: [ListingsController, MarketplaceController],
+  controllers: [ListingsController, MarketplaceController, PublicTunerProfileController],
   providers: [ListingsService],
   exports: [ListingsService]
 })
