@@ -26,6 +26,23 @@ interface ListingRecord {
   requirements: ListingRequirements;
 }
 
+interface ListingVersionRecord {
+  id: string;
+  listingId: string;
+  semanticLabel: string;
+  changelogNotes: string;
+  createdAt: number;
+}
+
+interface EntitlementRecord {
+  id: string;
+  listingId: string;
+  userId: string;
+  versionId: string;
+  createdAt: number;
+  upgradedAt: number | null;
+}
+
 interface CreateListingInput {
   title?: string;
   stage?: string;
@@ -67,9 +84,20 @@ interface UpdateListingInput {
   requirements?: Partial<ListingRequirements>;
 }
 
+interface CreateListingVersionInput {
+  semanticLabel?: string;
+  changelogNotes?: string;
+}
+
+interface CreateEntitlementInput {
+  versionId?: string;
+}
+
 @Injectable()
 export class ListingsService {
   private readonly listingsById = new Map<string, ListingRecord>();
+  private readonly versionsByListingId = new Map<string, ListingVersionRecord[]>();
+  private readonly entitlementsById = new Map<string, EntitlementRecord>();
 
   constructor(
     @Inject(CompatibilityService) private readonly compatibilityService: CompatibilityService,
@@ -217,6 +245,98 @@ export class ListingsService {
     return listing;
   }
 
+  createVersion(tunerUserId: string, listingId: string, input: CreateListingVersionInput): ListingVersionRecord {
+    const listing = this.getOwnedListing(tunerUserId, listingId);
+    const semanticLabel = input.semanticLabel?.trim();
+    const changelogNotes = input.changelogNotes?.trim();
+
+    if (!semanticLabel || !this.isSemanticLabel(semanticLabel)) {
+      throw new BadRequestException("Semantic label is required and must be versioned");
+    }
+
+    if (!changelogNotes) {
+      throw new BadRequestException("Changelog notes are required");
+    }
+
+    const version: ListingVersionRecord = {
+      id: randomUUID(),
+      listingId: listing.id,
+      semanticLabel,
+      changelogNotes,
+      createdAt: Date.now()
+    };
+
+    const versions = this.versionsByListingId.get(listing.id) ?? [];
+    this.versionsByListingId.set(listing.id, [version, ...versions]);
+    return version;
+  }
+
+  getListingDetail(userId: string, listingId: string): {
+    listing: ListingRecord;
+    versionHistory: ListingVersionRecord[];
+  } {
+    const listing = this.getListingById(listingId);
+    const versionHistory = this.getVersionHistory(listingId);
+
+    if (listing.publishStatus !== "published" && listing.tunerUserId !== userId) {
+      throw new ForbiddenException("Listing ownership required");
+    }
+
+    return {
+      listing,
+      versionHistory
+    };
+  }
+
+  createEntitlement(userId: string, listingId: string, input: CreateEntitlementInput): EntitlementRecord {
+    this.getListingById(listingId);
+    const selectedVersion = this.resolveVersion(listingId, input.versionId);
+
+    const entitlement: EntitlementRecord = {
+      id: randomUUID(),
+      listingId,
+      userId,
+      versionId: selectedVersion.id,
+      createdAt: Date.now(),
+      upgradedAt: null
+    };
+
+    this.entitlementsById.set(entitlement.id, entitlement);
+    return entitlement;
+  }
+
+  upgradeEntitlement(userId: string, entitlementId: string, versionId: string): EntitlementRecord {
+    const entitlement = this.getOwnedEntitlement(userId, entitlementId);
+    const version = this.resolveVersion(entitlement.listingId, versionId);
+
+    entitlement.versionId = version.id;
+    entitlement.upgradedAt = Date.now();
+    return entitlement;
+  }
+
+  getDownloadPage(userId: string, entitlementId: string): {
+    download: {
+      entitlementId: string;
+      listingId: string;
+      versionId: string;
+      semanticLabel: string;
+      versionTimestamp: number;
+    };
+  } {
+    const entitlement = this.getOwnedEntitlement(userId, entitlementId);
+    const version = this.resolveVersion(entitlement.listingId, entitlement.versionId);
+
+    return {
+      download: {
+        entitlementId: entitlement.id,
+        listingId: entitlement.listingId,
+        versionId: version.id,
+        semanticLabel: version.semanticLabel,
+        versionTimestamp: version.createdAt
+      }
+    };
+  }
+
   searchMarketplace(userId: string, query: MarketplaceSearchQuery): {
     results: Array<
       ListingRecord & {
@@ -329,7 +449,7 @@ export class ListingsService {
   }
 
   private getOwnedListing(tunerUserId: string, listingId: string): ListingRecord {
-    const listing = this.listingsById.get(listingId);
+    const listing = this.getListingById(listingId);
     if (!listing) {
       throw new NotFoundException("Listing not found");
     }
@@ -339,6 +459,55 @@ export class ListingsService {
     }
 
     return listing;
+  }
+
+  private getListingById(listingId: string): ListingRecord {
+    const listing = this.listingsById.get(listingId);
+    if (!listing) {
+      throw new NotFoundException("Listing not found");
+    }
+
+    return listing;
+  }
+
+  private getVersionHistory(listingId: string): ListingVersionRecord[] {
+    return [...(this.versionsByListingId.get(listingId) ?? [])];
+  }
+
+  private resolveVersion(listingId: string, versionId?: string): ListingVersionRecord {
+    const versions = this.versionsByListingId.get(listingId) ?? [];
+
+    if (versions.length === 0) {
+      throw new BadRequestException("Listing has no versions");
+    }
+
+    if (!versionId) {
+      return versions[0];
+    }
+
+    const version = versions.find((candidate) => candidate.id === versionId);
+    if (!version) {
+      throw new NotFoundException("Version not found");
+    }
+
+    return version;
+  }
+
+  private getOwnedEntitlement(userId: string, entitlementId: string): EntitlementRecord {
+    const entitlement = this.entitlementsById.get(entitlementId);
+    if (!entitlement) {
+      throw new NotFoundException("Entitlement not found");
+    }
+
+    if (entitlement.userId !== userId) {
+      throw new ForbiddenException("Entitlement ownership required");
+    }
+
+    return entitlement;
+  }
+
+  private isSemanticLabel(semanticLabel: string): boolean {
+    return /^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(semanticLabel);
   }
 
   private getPublishMissingFields(input: {

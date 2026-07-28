@@ -113,6 +113,30 @@ export class ListingsController {
     };
   }
 
+  @Post(":listingId/versions")
+  @UseGuards(AuthGuard)
+  createVersion(
+    @Req() request: { currentUserId: string },
+    @Param("listingId") listingId: string,
+    @Body() body: { semanticLabel?: string; changelogNotes?: string }
+  ) {
+    const currentUser = this.authService.getUserById(request.currentUserId);
+
+    if (currentUser.role !== "tuner") {
+      throw new ForbiddenException("Tuner role required");
+    }
+
+    return {
+      version: this.listingsService.createVersion(request.currentUserId, listingId, body)
+    };
+  }
+
+  @Get(":listingId")
+  @UseGuards(AuthGuard)
+  getListingDetail(@Req() request: { currentUserId: string }, @Param("listingId") listingId: string) {
+    return this.listingsService.getListingDetail(request.currentUserId, listingId);
+  }
+
   @Get()
   @UseGuards(AuthGuard)
   listWithCompatibility(@Req() request: { currentUserId: string }, @Query("setupId") setupId: string) {
