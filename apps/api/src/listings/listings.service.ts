@@ -110,6 +110,39 @@ interface CreateEntitlementInput {
   versionId?: string;
 }
 
+interface CheckoutPreviewInput {
+  setupId?: string;
+}
+
+interface CheckoutAttemptInput {
+  setupId?: string;
+  acceptedLicense?: boolean;
+  acceptedVinPolicy?: boolean;
+}
+
+interface CheckoutSummary {
+  listing: {
+    id: string;
+    title: string;
+    stage: string;
+    priceAmount: number;
+    priceCurrency: string;
+  };
+  setup: {
+    id: string;
+    make: string;
+    model: string;
+    engine: string;
+    ecuId: string;
+    transmission: string;
+    fuelType: string;
+    installedMods: string[];
+  };
+  versionId: string;
+  semanticLabel: string;
+  versionTimestamp: number;
+}
+
 @Injectable()
 export class ListingsService {
   private readonly listingsById = new Map<string, ListingRecord>();
@@ -358,6 +391,58 @@ export class ListingsService {
     return [...(this.notificationsByUserId.get(userId) ?? [])];
   }
 
+  previewCheckout(userId: string, listingId: string, input: CheckoutPreviewInput): {
+    purchaseButtonDisabled: boolean;
+    compatibility: CompatibilityResult;
+    orderSummary: CheckoutSummary;
+  } {
+    const listing = this.getListingById(listingId);
+    const setup = this.vehicleSetupsService.getSetupForCompatibility(userId, input.setupId ?? "");
+    const compatibility = this.compatibilityService.evaluate(listing.requirements, setup);
+    const version = this.resolveVersion(listing.id);
+
+    return {
+      purchaseButtonDisabled: compatibility.status === "Not Compatible",
+      compatibility,
+      orderSummary: this.buildCheckoutSummary(listing, setup, version)
+    };
+  }
+
+  attemptCheckout(userId: string, listingId: string, input: CheckoutAttemptInput): {
+    order: CheckoutSummary & {
+      acceptedLicense: boolean;
+      acceptedVinPolicy: boolean;
+      compatibilityStatus: CompatibilityResult["status"];
+      createdAt: number;
+    };
+  } {
+    const listing = this.getListingById(listingId);
+
+    if (!input.acceptedLicense || !input.acceptedVinPolicy) {
+      throw new BadRequestException("Required terms must be accepted");
+    }
+
+    const setup = this.vehicleSetupsService.getSetupForCompatibility(userId, input.setupId ?? "");
+    const compatibility = this.compatibilityService.evaluate(listing.requirements, setup);
+
+    if (compatibility.status === "Not Compatible") {
+      throw new ForbiddenException("Checkout blocked by compatibility gate");
+    }
+
+    const version = this.resolveVersion(listing.id);
+    const orderSummary = this.buildCheckoutSummary(listing, setup, version);
+
+    return {
+      order: {
+        ...orderSummary,
+        acceptedLicense: true,
+        acceptedVinPolicy: true,
+        compatibilityStatus: compatibility.status,
+        createdAt: Date.now()
+      }
+    };
+  }
+
   createVersion(tunerUserId: string, listingId: string, input: CreateListingVersionInput): ListingVersionRecord {
     const listing = this.getOwnedListing(tunerUserId, listingId);
     const semanticLabel = input.semanticLabel?.trim();
@@ -604,6 +689,35 @@ export class ListingsService {
     }
 
     return version;
+  }
+
+  private buildCheckoutSummary(
+    listing: ListingRecord,
+    setup: { id: string; make: string; model: string; engine: string; ecuId: string; transmission: string; fuelType: string; installedMods: string[] },
+    version: ListingVersionRecord
+  ): CheckoutSummary {
+    return {
+      listing: {
+        id: listing.id,
+        title: listing.title,
+        stage: listing.stage,
+        priceAmount: listing.priceAmount,
+        priceCurrency: listing.priceCurrency
+      },
+      setup: {
+        id: setup.id,
+        make: setup.make,
+        model: setup.model,
+        engine: setup.engine,
+        ecuId: setup.ecuId,
+        transmission: setup.transmission,
+        fuelType: setup.fuelType,
+        installedMods: setup.installedMods
+      },
+      versionId: version.id,
+      semanticLabel: version.semanticLabel,
+      versionTimestamp: version.createdAt
+    };
   }
 
   private getOwnedEntitlement(userId: string, entitlementId: string): EntitlementRecord {

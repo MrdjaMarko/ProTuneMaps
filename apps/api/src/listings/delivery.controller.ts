@@ -40,6 +40,28 @@ export class DeliveryController {
     return this.listingsService.getDownloadPage(request.currentUserId, entitlementId);
   }
 
+  @Post("listings/:listingId/checkout-preview")
+  @HttpCode(200)
+  @UseGuards(AuthGuard)
+  checkoutPreview(
+    @Req() request: { currentUserId: string },
+    @Param("listingId") listingId: string,
+    @Body() body: { setupId?: string }
+  ) {
+    return this.listingsService.previewCheckout(request.currentUserId, listingId, body);
+  }
+
+  @Post("listings/:listingId/checkout")
+  @HttpCode(200)
+  @UseGuards(AuthGuard)
+  checkout(
+    @Req() request: { currentUserId: string },
+    @Param("listingId") listingId: string,
+    @Body() body: { setupId?: string; acceptedLicense?: boolean; acceptedVinPolicy?: boolean }
+  ) {
+    return this.listingsService.attemptCheckout(request.currentUserId, listingId, body);
+  }
+
   @Post("admin/listings/:listingId/unpublish")
   @HttpCode(200)
   @UseGuards(AuthGuard)
