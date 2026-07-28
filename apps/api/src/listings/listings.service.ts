@@ -200,6 +200,31 @@ export interface OrderRecord {
   createdAt: number;
 }
 
+export interface OrderHistoryEntry {
+  orderId: string;
+  listingId: string;
+  versionId: string;
+  semanticLabel: string;
+  status: "created" | "failed";
+  createdAt: number;
+  setupSnapshot: CheckoutSummary["setup"];
+  downloadCenter: {
+    available: boolean;
+    error?: string;
+    downloadPage?: DownloadPageRecord;
+  };
+}
+
+export interface OrderHistoryResponse {
+  pagination: {
+    page: number;
+    limit: number;
+    totalItems: number;
+    totalPages: number;
+  };
+  orders: OrderHistoryEntry[];
+}
+
 export interface PaymentRecord {
   id: string;
   orderId: string;
@@ -639,6 +664,38 @@ export class ListingsService {
     return { order };
   }
 
+  getOrderHistory(userId: string, pageInput?: string, limitInput?: string): OrderHistoryResponse {
+    const page = this.parsePositiveInteger(pageInput, 1);
+    const limit = this.parsePositiveInteger(limitInput, 10);
+
+    if (page < 1) {
+      throw new BadRequestException("Page must be at least 1");
+    }
+
+    if (limit < 1 || limit > 50) {
+      throw new BadRequestException("Limit must be between 1 and 50");
+    }
+
+    const userOrders = [...this.ordersById.values()]
+      .filter((order) => order.userId === userId)
+      .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id));
+
+    const totalItems = userOrders.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+    const startIndex = (page - 1) * limit;
+    const pageOrders = userOrders.slice(startIndex, startIndex + limit);
+
+    return {
+      pagination: {
+        page,
+        limit,
+        totalItems,
+        totalPages
+      },
+      orders: pageOrders.map((order) => this.buildOrderHistoryEntry(userId, order))
+    };
+  }
+
   getOrderAudit(userId: string, orderId: string): {
     events: PaymentAuditRecord[];
   } {
@@ -1072,6 +1129,54 @@ export class ListingsService {
 
   private getOrderByEntitlementId(entitlementId: string): OrderRecord | null {
     return [...this.ordersById.values()].find((order) => order.entitlementId === entitlementId) ?? null;
+  }
+
+  private buildOrderHistoryEntry(userId: string, order: OrderRecord): OrderHistoryEntry {
+    const entitlement = order.entitlementId ? this.entitlementsById.get(order.entitlementId) ?? null : null;
+
+    if (entitlement) {
+      const downloadPage = this.getDownloadPage(userId, entitlement.id).download;
+      return {
+        orderId: order.id,
+        listingId: order.listingId,
+        versionId: order.versionId,
+        semanticLabel: order.semanticLabel,
+        status: order.status,
+        createdAt: order.createdAt,
+        setupSnapshot: order.setup,
+        downloadCenter: {
+          available: true,
+          downloadPage
+        }
+      };
+    }
+
+    return {
+      orderId: order.id,
+      listingId: order.listingId,
+      versionId: order.versionId,
+      semanticLabel: order.semanticLabel,
+      status: order.status,
+      createdAt: order.createdAt,
+      setupSnapshot: order.setup,
+      downloadCenter: {
+        available: false,
+        error: order.status === "failed" ? "No entitlement available for this failed order" : "No entitlement linked to this order"
+      }
+    };
+  }
+
+  private parsePositiveInteger(value: string | undefined, fallback: number): number {
+    if (!value) {
+      return fallback;
+    }
+
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isNaN(parsed)) {
+      return fallback;
+    }
+
+    return parsed;
   }
 
   private getPublishMissingFields(input: {

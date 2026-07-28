@@ -94,6 +94,15 @@ export class DeliveryController {
     return this.listingsService.getDownloadAudit(request.currentUserId, entitlementId) as DownloadAuditResponse;
   }
 
+  @Get("orders")
+  @UseGuards(AuthGuard)
+  getOrders(
+    @Req() request: { currentUserId: string },
+    @Query() query: { page?: string; limit?: string }
+  ): any {
+    return this.listingsService.getOrderHistory(request.currentUserId, query.page, query.limit);
+  }
+
   @Post("listings/:listingId/checkout-preview")
   @HttpCode(200)
   @UseGuards(AuthGuard)
