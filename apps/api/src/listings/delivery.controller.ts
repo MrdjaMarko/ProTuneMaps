@@ -41,6 +41,10 @@ interface NotificationResponse {
   notifications: Record<string, unknown>[];
 }
 
+interface SupportTicketResponse {
+  ticket: Record<string, unknown>;
+}
+
 @Controller("v1")
 export class DeliveryController {
   constructor(
@@ -101,6 +105,26 @@ export class DeliveryController {
     @Query() query: { page?: string; limit?: string }
   ): any {
     return this.listingsService.getOrderHistory(request.currentUserId, query.page, query.limit);
+  }
+
+  @Post("orders/:orderId/support-tickets")
+  @UseGuards(AuthGuard)
+  createSupportTicket(
+    @Req() request: { currentUserId: string },
+    @Param("orderId") orderId: string,
+    @Body() body: { issueType?: string; message?: string }
+  ): any {
+    return this.listingsService.createSupportTicket(request.currentUserId, orderId, body) as SupportTicketResponse;
+  }
+
+  @Patch("support-tickets/:ticketId")
+  @UseGuards(AuthGuard)
+  updateSupportTicket(
+    @Req() request: { currentUserId: string },
+    @Param("ticketId") ticketId: string,
+    @Body() body: { status?: string }
+  ): any {
+    return this.listingsService.updateSupportTicket(request.currentUserId, ticketId, body) as SupportTicketResponse;
   }
 
   @Post("listings/:listingId/checkout-preview")

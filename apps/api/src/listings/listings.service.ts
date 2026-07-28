@@ -225,6 +225,34 @@ export interface OrderHistoryResponse {
   orders: OrderHistoryEntry[];
 }
 
+export type SupportTicketIssueType = "install" | "drivability" | "performance" | "refund";
+
+export type SupportTicketStatus = "Open" | "Waiting on Buyer" | "Resolved" | "Closed";
+
+export interface SupportTicketRecord {
+  id: string;
+  orderId: string;
+  listingId: string;
+  tunerUserId: string;
+  userId: string;
+  versionId: string;
+  setupSnapshot: CheckoutSummary["setup"];
+  issueType: SupportTicketIssueType;
+  message: string;
+  status: SupportTicketStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreateSupportTicketInput {
+  issueType?: SupportTicketIssueType;
+  message?: string;
+}
+
+export interface UpdateSupportTicketInput {
+  status?: SupportTicketStatus;
+}
+
 export interface PaymentRecord {
   id: string;
   orderId: string;
@@ -263,6 +291,7 @@ export class ListingsService {
   private readonly paymentResultsByIdempotencyKey = new Map<string, PaymentAttemptResult>();
   private readonly paymentAuditsByOrderId = new Map<string, PaymentAuditRecord[]>();
   private readonly downloadAuditsByEntitlementId = new Map<string, DownloadAuditRecord[]>();
+  private readonly supportTicketsById = new Map<string, SupportTicketRecord>();
   private readonly moderationEventsByListingId = new Map<string, ModerationEventRecord[]>();
   private readonly notificationsByUserId = new Map<string, NotificationRecord[]>();
   private readonly downloadLinkTtlMs = 15 * 60 * 1000;
@@ -694,6 +723,72 @@ export class ListingsService {
       },
       orders: pageOrders.map((order) => this.buildOrderHistoryEntry(userId, order))
     };
+  }
+
+  createSupportTicket(userId: string, orderId: string, input: CreateSupportTicketInput): {
+    ticket: SupportTicketRecord;
+  } {
+    const order = this.getOrder(userId, orderId).order;
+
+    if (!order.entitlementId) {
+      throw new ForbiddenException("Only purchasers can open map-specific tickets");
+    }
+
+    const issueType = input.issueType;
+    if (!issueType || !["install", "drivability", "performance", "refund"].includes(issueType)) {
+      throw new BadRequestException("Issue type is required");
+    }
+
+    const listing = this.getListingById(order.listingId);
+    const now = Date.now();
+    const ticket: SupportTicketRecord = {
+      id: randomUUID(),
+      orderId: order.id,
+      listingId: listing.id,
+      tunerUserId: listing.tunerUserId,
+      userId,
+      versionId: order.versionId,
+      setupSnapshot: order.setup,
+      issueType,
+      message: input.message?.trim() || "",
+      status: "Open",
+      createdAt: now,
+      updatedAt: now
+    };
+
+    this.supportTicketsById.set(ticket.id, ticket);
+    this.appendNotification(listing.tunerUserId, {
+      id: randomUUID(),
+      userId: listing.tunerUserId,
+      listingId: listing.id,
+      message: `New support ticket ${ticket.id} for order ${order.id}`,
+      createdAt: now
+    });
+
+    return { ticket };
+  }
+
+  updateSupportTicket(userId: string, ticketId: string, input: UpdateSupportTicketInput): {
+    ticket: SupportTicketRecord;
+  } {
+    const ticket = this.supportTicketsById.get(ticketId);
+    if (!ticket) {
+      throw new NotFoundException("Support ticket not found");
+    }
+
+    if (ticket.userId !== userId) {
+      throw new ForbiddenException("Ticket ownership required");
+    }
+
+    const nextStatus = input.status;
+    if (!nextStatus || !["Open", "Waiting on Buyer", "Resolved", "Closed"].includes(nextStatus)) {
+      throw new BadRequestException("Status is required");
+    }
+
+    ticket.status = nextStatus;
+    ticket.updatedAt = Date.now();
+
+    return { ticket };
   }
 
   getOrderAudit(userId: string, orderId: string): {
