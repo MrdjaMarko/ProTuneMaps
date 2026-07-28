@@ -244,6 +244,31 @@ export interface SupportTicketRecord {
   updatedAt: number;
 }
 
+export interface SupportTicketMessageRecord {
+  id: string;
+  ticketId: string;
+  authorUserId: string;
+  body: string;
+  createdAt: number;
+}
+
+export interface SupportTicketTimelineRecord {
+  id: string;
+  ticketId: string;
+  actorUserId: string;
+  who: string;
+  action: "created" | "message_sent" | "status_changed";
+  detail: string;
+  createdAt: number;
+}
+
+export interface SupportTicketDetailRecord {
+  ticket: SupportTicketRecord & {
+    messages: SupportTicketMessageRecord[];
+    timeline: SupportTicketTimelineRecord[];
+  };
+}
+
 export interface CreateSupportTicketInput {
   issueType?: SupportTicketIssueType;
   message?: string;
@@ -251,6 +276,10 @@ export interface CreateSupportTicketInput {
 
 export interface UpdateSupportTicketInput {
   status?: SupportTicketStatus;
+}
+
+export interface CreateSupportTicketMessageInput {
+  message?: string;
 }
 
 export interface PaymentRecord {
@@ -292,6 +321,8 @@ export class ListingsService {
   private readonly paymentAuditsByOrderId = new Map<string, PaymentAuditRecord[]>();
   private readonly downloadAuditsByEntitlementId = new Map<string, DownloadAuditRecord[]>();
   private readonly supportTicketsById = new Map<string, SupportTicketRecord>();
+  private readonly supportTicketMessagesByTicketId = new Map<string, SupportTicketMessageRecord[]>();
+  private readonly supportTicketTimelineByTicketId = new Map<string, SupportTicketTimelineRecord[]>();
   private readonly moderationEventsByListingId = new Map<string, ModerationEventRecord[]>();
   private readonly notificationsByUserId = new Map<string, NotificationRecord[]>();
   private readonly downloadLinkTtlMs = 15 * 60 * 1000;
@@ -757,6 +788,15 @@ export class ListingsService {
     };
 
     this.supportTicketsById.set(ticket.id, ticket);
+    this.appendSupportTicketTimeline(ticket.id, {
+      id: randomUUID(),
+      ticketId: ticket.id,
+      actorUserId: userId,
+      who: userId,
+      action: "created",
+      detail: `Ticket created for ${issueType}`,
+      createdAt: now
+    });
     this.appendNotification(listing.tunerUserId, {
       id: randomUUID(),
       userId: listing.tunerUserId,
@@ -768,6 +808,50 @@ export class ListingsService {
     return { ticket };
   }
 
+  createSupportTicketMessage(userId: string, ticketId: string, input: CreateSupportTicketMessageInput): {
+    message: SupportTicketMessageRecord;
+  } {
+    const ticket = this.supportTicketsById.get(ticketId);
+    if (!ticket) {
+      throw new NotFoundException("Support ticket not found");
+    }
+
+    this.assertSupportTicketParticipant(userId, ticket);
+
+    if (ticket.status === "Closed") {
+      throw new ForbiddenException("Closed tickets are read-only");
+    }
+
+    const body = input.message?.trim();
+    if (!body) {
+      throw new BadRequestException("Message is required");
+    }
+
+    const message: SupportTicketMessageRecord = {
+      id: randomUUID(),
+      ticketId: ticket.id,
+      authorUserId: userId,
+      body,
+      createdAt: Date.now()
+    };
+
+    const messages = this.supportTicketMessagesByTicketId.get(ticket.id) ?? [];
+    this.supportTicketMessagesByTicketId.set(ticket.id, [...messages, message]);
+    this.appendSupportTicketTimeline(ticket.id, {
+      id: randomUUID(),
+      ticketId: ticket.id,
+      actorUserId: userId,
+      who: userId,
+      action: "message_sent",
+      detail: body,
+      createdAt: message.createdAt
+    });
+
+    this.notifySupportTicketParticipant(ticket, userId, `Support ticket ${ticket.id} new message: ${body}`);
+
+    return { message };
+  }
+
   updateSupportTicket(userId: string, ticketId: string, input: UpdateSupportTicketInput): {
     ticket: SupportTicketRecord;
   } {
@@ -776,19 +860,64 @@ export class ListingsService {
       throw new NotFoundException("Support ticket not found");
     }
 
-    if (ticket.userId !== userId) {
-      throw new ForbiddenException("Ticket ownership required");
-    }
+    this.assertSupportTicketParticipant(userId, ticket);
 
     const nextStatus = input.status;
     if (!nextStatus || !["Open", "Waiting on Buyer", "Resolved", "Closed"].includes(nextStatus)) {
       throw new BadRequestException("Status is required");
     }
 
+    if (ticket.status === "Closed" && nextStatus !== "Open") {
+      throw new ForbiddenException("Closed tickets are read-only");
+    }
+
+    const previousStatus = ticket.status;
     ticket.status = nextStatus;
     ticket.updatedAt = Date.now();
 
+    this.appendSupportTicketTimeline(ticket.id, {
+      id: randomUUID(),
+      ticketId: ticket.id,
+      actorUserId: userId,
+      who: userId,
+      action: "status_changed",
+      detail: `${previousStatus} -> ${nextStatus}`,
+      createdAt: ticket.updatedAt
+    });
+
+    this.notifySupportTicketParticipant(ticket, userId, `Support ticket ${ticket.id} status changed to ${nextStatus}`);
+
     return { ticket };
+  }
+
+  getSupportTicket(userId: string, ticketId: string): SupportTicketDetailRecord {
+    const ticket = this.supportTicketsById.get(ticketId);
+    if (!ticket) {
+      throw new NotFoundException("Support ticket not found");
+    }
+
+    this.assertSupportTicketParticipant(userId, ticket);
+
+    return {
+      ticket: {
+        ...ticket,
+        messages: [
+          ...(ticket.message
+            ? [
+                {
+                  id: `${ticket.id}-seed-message`,
+                  ticketId: ticket.id,
+                  authorUserId: ticket.userId,
+                  body: ticket.message,
+                  createdAt: ticket.createdAt
+                }
+              ]
+            : []),
+          ...(this.supportTicketMessagesByTicketId.get(ticket.id) ?? [])
+        ],
+        timeline: [...(this.supportTicketTimelineByTicketId.get(ticket.id) ?? [])]
+      }
+    };
   }
 
   getOrderAudit(userId: string, orderId: string): {
@@ -1176,6 +1305,28 @@ export class ListingsService {
   private appendPaymentAudit(orderId: string, event: PaymentAuditRecord): void {
     const events = this.paymentAuditsByOrderId.get(orderId) ?? [];
     this.paymentAuditsByOrderId.set(orderId, [...events, event]);
+  }
+
+  private appendSupportTicketTimeline(ticketId: string, event: SupportTicketTimelineRecord): void {
+    const events = this.supportTicketTimelineByTicketId.get(ticketId) ?? [];
+    this.supportTicketTimelineByTicketId.set(ticketId, [...events, event]);
+  }
+
+  private notifySupportTicketParticipant(ticket: SupportTicketRecord, actorUserId: string, message: string): void {
+    const recipientUserId = actorUserId === ticket.userId ? ticket.tunerUserId : ticket.userId;
+    this.appendNotification(recipientUserId, {
+      id: randomUUID(),
+      userId: recipientUserId,
+      listingId: ticket.listingId,
+      message,
+      createdAt: Date.now()
+    });
+  }
+
+  private assertSupportTicketParticipant(userId: string, ticket: SupportTicketRecord): void {
+    if (userId !== ticket.userId && userId !== ticket.tunerUserId) {
+      throw new ForbiddenException("Ticket access required");
+    }
   }
 
   private appendDownloadAudit(

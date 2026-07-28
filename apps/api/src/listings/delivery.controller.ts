@@ -45,6 +45,10 @@ interface SupportTicketResponse {
   ticket: Record<string, unknown>;
 }
 
+interface SupportTicketMessageResponse {
+  message: Record<string, unknown>;
+}
+
 @Controller("v1")
 export class DeliveryController {
   constructor(
@@ -115,6 +119,22 @@ export class DeliveryController {
     @Body() body: { issueType?: string; message?: string }
   ): any {
     return this.listingsService.createSupportTicket(request.currentUserId, orderId, body) as SupportTicketResponse;
+  }
+
+  @Get("support-tickets/:ticketId")
+  @UseGuards(AuthGuard)
+  getSupportTicket(@Req() request: { currentUserId: string }, @Param("ticketId") ticketId: string): any {
+    return this.listingsService.getSupportTicket(request.currentUserId, ticketId) as SupportTicketResponse;
+  }
+
+  @Post("support-tickets/:ticketId/messages")
+  @UseGuards(AuthGuard)
+  createSupportTicketMessage(
+    @Req() request: { currentUserId: string },
+    @Param("ticketId") ticketId: string,
+    @Body() body: { message?: string }
+  ): any {
+    return this.listingsService.createSupportTicketMessage(request.currentUserId, ticketId, body) as SupportTicketMessageResponse;
   }
 
   @Patch("support-tickets/:ticketId")
