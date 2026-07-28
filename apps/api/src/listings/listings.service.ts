@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   CompatibilityService,
   type CompatibilityStatus,
@@ -9,7 +9,7 @@ import {
 import { TunerService } from "../tuner/tuner.service";
 import { VehicleSetupsService } from "../vehicle-setups/vehicle-setups.service";
 
-interface ListingRecord {
+export interface ListingRecord {
   id: string;
   tunerUserId: string;
   tunerDisplayName: string;
@@ -26,7 +26,7 @@ interface ListingRecord {
   requirements: ListingRequirements;
 }
 
-interface ListingVersionRecord {
+export interface ListingVersionRecord {
   id: string;
   listingId: string;
   semanticLabel: string;
@@ -34,16 +34,17 @@ interface ListingVersionRecord {
   createdAt: number;
 }
 
-interface EntitlementRecord {
+export interface EntitlementRecord {
   id: string;
   listingId: string;
   userId: string;
   versionId: string;
+  orderId: string | null;
   createdAt: number;
   upgradedAt: number | null;
 }
 
-interface ModerationEventRecord {
+export interface ModerationEventRecord {
   id: string;
   listingId: string;
   action: "unpublish" | "republish";
@@ -52,7 +53,7 @@ interface ModerationEventRecord {
   createdAt: number;
 }
 
-interface NotificationRecord {
+export interface NotificationRecord {
   id: string;
   userId: string;
   listingId: string;
@@ -60,7 +61,19 @@ interface NotificationRecord {
   createdAt: number;
 }
 
-interface CreateListingInput {
+export interface DownloadAuditRecord {
+  id: string;
+  entitlementId: string;
+  listingId: string;
+  orderId: string | null;
+  userId: string;
+  versionId: string;
+  outcome: "granted" | "denied";
+  reason: string;
+  createdAt: number;
+}
+
+export interface CreateListingInput {
   title?: string;
   stage?: string;
   priceAmount?: number;
@@ -72,7 +85,7 @@ interface CreateListingInput {
   requirements?: Partial<ListingRequirements>;
 }
 
-interface MarketplaceSearchQuery {
+export interface MarketplaceSearchQuery {
   setupId: string;
   make?: string;
   model?: string;
@@ -82,7 +95,7 @@ interface MarketplaceSearchQuery {
   sort?: "relevance" | "newest";
 }
 
-interface PublishedMapCard {
+export interface PublishedMapCard {
   id: string;
   title: string;
   stage: string;
@@ -90,7 +103,7 @@ interface PublishedMapCard {
   priceCurrency: string;
 }
 
-interface UpdateListingInput {
+export interface UpdateListingInput {
   title?: string;
   stage?: string;
   priceAmount?: number;
@@ -101,26 +114,27 @@ interface UpdateListingInput {
   requirements?: Partial<ListingRequirements>;
 }
 
-interface CreateListingVersionInput {
+export interface CreateListingVersionInput {
   semanticLabel?: string;
   changelogNotes?: string;
 }
 
-interface CreateEntitlementInput {
+export interface CreateEntitlementInput {
   versionId?: string;
+  orderId?: string | null;
 }
 
-interface CheckoutPreviewInput {
+export interface CheckoutPreviewInput {
   setupId?: string;
 }
 
-interface CheckoutAttemptInput {
+export interface CheckoutAttemptInput {
   setupId?: string;
   acceptedLicense?: boolean;
   acceptedVinPolicy?: boolean;
 }
 
-interface PaymentAttemptInput {
+export interface PaymentAttemptInput {
   setupId?: string;
   acceptedLicense?: boolean;
   acceptedVinPolicy?: boolean;
@@ -128,7 +142,7 @@ interface PaymentAttemptInput {
   simulateFailure?: boolean;
 }
 
-interface CheckoutSummary {
+export interface CheckoutSummary {
   listing: {
     id: string;
     title: string;
@@ -151,7 +165,28 @@ interface CheckoutSummary {
   versionTimestamp: number;
 }
 
-interface OrderRecord {
+export interface DownloadLinkInput {
+  expiresAt?: string;
+  signature?: string;
+}
+
+export interface DownloadPageRecord {
+  entitlementId: string;
+  listingId: string;
+  orderId: string | null;
+  versionId: string;
+  semanticLabel: string;
+  versionTimestamp: number;
+  checksum: string;
+  signedUrl: string;
+  expiresAt: number;
+}
+
+export interface DownloadResponseRecord extends DownloadPageRecord {
+  downloadedAt: number;
+}
+
+export interface OrderRecord {
   id: string;
   listingId: string;
   userId: string;
@@ -165,7 +200,7 @@ interface OrderRecord {
   createdAt: number;
 }
 
-interface PaymentRecord {
+export interface PaymentRecord {
   id: string;
   orderId: string;
   listingId: string;
@@ -176,7 +211,7 @@ interface PaymentRecord {
   createdAt: number;
 }
 
-interface PaymentAuditRecord {
+export interface PaymentAuditRecord {
   id: string;
   orderId: string;
   paymentId: string;
@@ -186,7 +221,7 @@ interface PaymentAuditRecord {
   note: string;
 }
 
-interface PaymentAttemptResult {
+export interface PaymentAttemptResult {
   payment: PaymentRecord;
   order: OrderRecord;
   entitlement?: EntitlementRecord;
@@ -202,8 +237,11 @@ export class ListingsService {
   private readonly paymentsById = new Map<string, PaymentRecord>();
   private readonly paymentResultsByIdempotencyKey = new Map<string, PaymentAttemptResult>();
   private readonly paymentAuditsByOrderId = new Map<string, PaymentAuditRecord[]>();
+  private readonly downloadAuditsByEntitlementId = new Map<string, DownloadAuditRecord[]>();
   private readonly moderationEventsByListingId = new Map<string, ModerationEventRecord[]>();
   private readonly notificationsByUserId = new Map<string, NotificationRecord[]>();
+  private readonly downloadLinkTtlMs = 15 * 60 * 1000;
+  private readonly downloadSigningSecret = "protunemaps-download-link-secret";
 
   constructor(
     @Inject(CompatibilityService) private readonly compatibilityService: CompatibilityService,
@@ -549,7 +587,7 @@ export class ListingsService {
     let entitlement: EntitlementRecord | undefined;
 
     if (payment.status === "succeeded") {
-      entitlement = this.createEntitlement(userId, listingId, { versionId: order.versionId });
+      entitlement = this.createEntitlement(userId, listingId, { versionId: order.versionId, orderId: order.id });
       order.entitlementId = entitlement.id;
       this.appendNotification(userId, {
         id: randomUUID(),
@@ -670,6 +708,7 @@ export class ListingsService {
       listingId,
       userId,
       versionId: selectedVersion.id,
+      orderId: input.orderId ?? null,
       createdAt: Date.now(),
       upgradedAt: null
     };
@@ -688,25 +727,80 @@ export class ListingsService {
   }
 
   getDownloadPage(userId: string, entitlementId: string): {
-    download: {
-      entitlementId: string;
-      listingId: string;
-      versionId: string;
-      semanticLabel: string;
-      versionTimestamp: number;
-    };
+    download: DownloadPageRecord;
   } {
     const entitlement = this.getOwnedEntitlement(userId, entitlementId);
     const version = this.resolveVersion(entitlement.listingId, entitlement.versionId);
+    const listing = this.getListingById(entitlement.listingId);
+    const order = this.getOrderByEntitlementId(entitlement.id);
+    const expiresAt = Date.now() + this.downloadLinkTtlMs;
+    const checksum = this.buildDownloadChecksum(listing, version, entitlement, order?.id ?? null);
 
     return {
       download: {
         entitlementId: entitlement.id,
         listingId: entitlement.listingId,
+        orderId: order?.id ?? entitlement.orderId,
         versionId: version.id,
         semanticLabel: version.semanticLabel,
-        versionTimestamp: version.createdAt
+        versionTimestamp: version.createdAt,
+        checksum,
+        signedUrl: this.buildSignedDownloadUrl(entitlement.id, expiresAt),
+        expiresAt
       }
+    };
+  }
+
+  accessDownload(userId: string, entitlementId: string, input: DownloadLinkInput): {
+    download: DownloadResponseRecord;
+  } {
+    const entitlement = this.getOwnedEntitlement(userId, entitlementId);
+    const version = this.resolveVersion(entitlement.listingId, entitlement.versionId);
+    const listing = this.getListingById(entitlement.listingId);
+    const order = this.getOrderByEntitlementId(entitlement.id);
+    const parsedExpiresAt = Number(input.expiresAt);
+    const signature = (input.signature ?? "").trim();
+    const now = Date.now();
+
+    if (!signature || Number.isNaN(parsedExpiresAt) || parsedExpiresAt < now) {
+      this.appendDownloadAudit(entitlement, order?.id ?? entitlement.orderId, version.id, userId, "denied", "Download link expired or missing signature");
+      throw new ForbiddenException("Download link is invalid or expired");
+    }
+
+    const expectedSignature = this.signDownloadLink(entitlement.id, parsedExpiresAt);
+    const expectedBuffer = Buffer.from(expectedSignature, "hex");
+    const providedBuffer = Buffer.from(signature, "hex");
+
+    if (expectedBuffer.length !== providedBuffer.length || !timingSafeEqual(expectedBuffer, providedBuffer)) {
+      this.appendDownloadAudit(entitlement, order?.id ?? entitlement.orderId, version.id, userId, "denied", "Download link signature mismatch");
+      throw new ForbiddenException("Download link is invalid or expired");
+    }
+
+    const checksum = this.buildDownloadChecksum(listing, version, entitlement, order?.id ?? null);
+    this.appendDownloadAudit(entitlement, order?.id ?? entitlement.orderId, version.id, userId, "granted", "Download link validated");
+
+    return {
+      download: {
+        entitlementId: entitlement.id,
+        listingId: entitlement.listingId,
+        orderId: order?.id ?? entitlement.orderId,
+        versionId: version.id,
+        semanticLabel: version.semanticLabel,
+        versionTimestamp: version.createdAt,
+        checksum,
+        signedUrl: this.buildSignedDownloadUrl(entitlement.id, parsedExpiresAt),
+        expiresAt: parsedExpiresAt,
+        downloadedAt: now
+      }
+    };
+  }
+
+  getDownloadAudit(userId: string, entitlementId: string): {
+    events: DownloadAuditRecord[];
+  } {
+    const entitlement = this.getOwnedEntitlement(userId, entitlementId);
+    return {
+      events: [...(this.downloadAuditsByEntitlementId.get(entitlement.id) ?? [])]
     };
   }
 
@@ -855,7 +949,12 @@ export class ListingsService {
     }
 
     if (!versionId) {
-      return versions[0];
+      const latestVersion = versions[0];
+      if (!latestVersion) {
+        throw new BadRequestException("Listing has no versions");
+      }
+
+      return latestVersion;
     }
 
     const version = versions.find((candidate) => candidate.id === versionId);
@@ -925,6 +1024,54 @@ export class ListingsService {
   private appendPaymentAudit(orderId: string, event: PaymentAuditRecord): void {
     const events = this.paymentAuditsByOrderId.get(orderId) ?? [];
     this.paymentAuditsByOrderId.set(orderId, [...events, event]);
+  }
+
+  private appendDownloadAudit(
+    entitlement: EntitlementRecord,
+    orderId: string | null,
+    versionId: string,
+    userId: string,
+    outcome: "granted" | "denied",
+    reason: string
+  ): void {
+    const events = this.downloadAuditsByEntitlementId.get(entitlement.id) ?? [];
+    const record: DownloadAuditRecord = {
+      id: randomUUID(),
+      entitlementId: entitlement.id,
+      listingId: entitlement.listingId,
+      orderId,
+      userId,
+      versionId,
+      outcome,
+      reason,
+      createdAt: Date.now()
+    };
+
+    this.downloadAuditsByEntitlementId.set(entitlement.id, [...events, record]);
+  }
+
+  private buildDownloadChecksum(
+    listing: ListingRecord,
+    version: ListingVersionRecord,
+    entitlement: EntitlementRecord,
+    orderId: string | null
+  ): string {
+    return createHash("sha256")
+      .update([listing.id, version.id, version.semanticLabel, version.createdAt, entitlement.id, orderId ?? ""].join("|"))
+      .digest("hex");
+  }
+
+  private buildSignedDownloadUrl(entitlementId: string, expiresAt: number): string {
+    const signature = this.signDownloadLink(entitlementId, expiresAt);
+    return `/v1/downloads/${entitlementId}/file?expiresAt=${expiresAt}&signature=${signature}`;
+  }
+
+  private signDownloadLink(entitlementId: string, expiresAt: number): string {
+    return createHmac("sha256", this.downloadSigningSecret).update(`${entitlementId}:${expiresAt}`).digest("hex");
+  }
+
+  private getOrderByEntitlementId(entitlementId: string): OrderRecord | null {
+    return [...this.ordersById.values()].find((order) => order.entitlementId === entitlementId) ?? null;
   }
 
   private getPublishMissingFields(input: {
