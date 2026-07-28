@@ -185,6 +185,17 @@ export class ListingsService {
       }
     }
 
+    const missingFields = this.getPublishMissingFields({
+      title: listing.title,
+      stage: listing.stage,
+      priceAmount: listing.priceAmount,
+      requirements: listing.requirements
+    });
+
+    if (missingFields.length > 0) {
+      listing.publishStatus = "draft";
+    }
+
     return listing;
   }
 

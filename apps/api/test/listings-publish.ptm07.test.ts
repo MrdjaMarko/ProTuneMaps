@@ -189,4 +189,62 @@ describe("PTM-07 Map listing create/edit/publish with validation", () => {
     expect(search.body.results.some((x: { id: string }) => x.id === publishedListing.body.listing.id)).toBe(true);
     expect(elapsedMs).toBeLessThan(60000);
   });
+
+  it("moves a published listing back to draft when edits make publish metadata invalid", async () => {
+    const tuner = await signupAndLogin("ptm07-tuner4@example.com");
+    authService.updateUserRole(tuner.userId, "tuner");
+
+    const created = await request(app.getHttpServer())
+      .post("/v1/listings")
+      .set("Cookie", tuner.cookie)
+      .send({
+        title: "Published Then Invalid",
+        stage: "Stage 2",
+        priceAmount: 220,
+        priceCurrency: "EUR",
+        requirements: {
+          make: "BMW",
+          model: "340i",
+          engine: "B58",
+          ecuId: "MEVD172G",
+          fuelType: "98 RON",
+          requiredMods: []
+        }
+      });
+
+    expect(created.statusCode).toBe(201);
+    expect(created.body.listing.publishStatus).toBe("published");
+
+    const edited = await request(app.getHttpServer())
+      .patch(`/v1/listings/${created.body.listing.id}`)
+      .set("Cookie", tuner.cookie)
+      .send({
+        priceAmount: 0
+      });
+
+    expect(edited.statusCode).toBe(200);
+    expect(edited.body.listing.publishStatus).toBe("draft");
+
+    const buyer = await signupAndLogin("ptm07-buyer2@example.com");
+    const setup = await request(app.getHttpServer())
+      .post("/v1/vehicle-setups")
+      .set("Cookie", buyer.cookie)
+      .send({
+        make: "BMW",
+        model: "340i",
+        year: 2018,
+        engine: "B58",
+        ecuId: "MEVD172G",
+        transmission: "AT",
+        fuelType: "98 RON",
+        installedMods: []
+      });
+
+    const search = await request(app.getHttpServer())
+      .get(`/v1/marketplace/search?setupId=${setup.body.setup.id}&make=BMW&model=340i&sort=relevance`)
+      .set("Cookie", buyer.cookie);
+
+    expect(search.statusCode).toBe(200);
+    expect(search.body.results.some((x: { id: string }) => x.id === created.body.listing.id)).toBe(false);
+  });
 });
