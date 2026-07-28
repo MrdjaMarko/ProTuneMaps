@@ -120,6 +120,14 @@ interface CheckoutAttemptInput {
   acceptedVinPolicy?: boolean;
 }
 
+interface PaymentAttemptInput {
+  setupId?: string;
+  acceptedLicense?: boolean;
+  acceptedVinPolicy?: boolean;
+  idempotencyKey?: string;
+  simulateFailure?: boolean;
+}
+
 interface CheckoutSummary {
   listing: {
     id: string;
@@ -143,11 +151,57 @@ interface CheckoutSummary {
   versionTimestamp: number;
 }
 
+interface OrderRecord {
+  id: string;
+  listingId: string;
+  userId: string;
+  paymentId: string;
+  entitlementId: string | null;
+  versionId: string;
+  semanticLabel: string;
+  versionTimestamp: number;
+  setup: CheckoutSummary["setup"];
+  status: "created" | "failed";
+  createdAt: number;
+}
+
+interface PaymentRecord {
+  id: string;
+  orderId: string;
+  listingId: string;
+  userId: string;
+  status: "succeeded" | "failed";
+  idempotencyKey: string;
+  failureReason: string | null;
+  createdAt: number;
+}
+
+interface PaymentAuditRecord {
+  id: string;
+  orderId: string;
+  paymentId: string;
+  actorUserId: string;
+  outcome: "succeeded" | "failed";
+  createdAt: number;
+  note: string;
+}
+
+interface PaymentAttemptResult {
+  payment: PaymentRecord;
+  order: OrderRecord;
+  entitlement?: EntitlementRecord;
+  replayed: boolean;
+}
+
 @Injectable()
 export class ListingsService {
   private readonly listingsById = new Map<string, ListingRecord>();
   private readonly versionsByListingId = new Map<string, ListingVersionRecord[]>();
   private readonly entitlementsById = new Map<string, EntitlementRecord>();
+  private readonly ordersById = new Map<string, OrderRecord>();
+  private readonly paymentsById = new Map<string, PaymentRecord>();
+  private readonly paymentResultsByIdempotencyKey = new Map<string, PaymentAttemptResult>();
+  private readonly paymentAuditsByOrderId = new Map<string, PaymentAuditRecord[]>();
   private readonly moderationEventsByListingId = new Map<string, ModerationEventRecord[]>();
   private readonly notificationsByUserId = new Map<string, NotificationRecord[]>();
 
@@ -440,6 +494,127 @@ export class ListingsService {
         compatibilityStatus: compatibility.status,
         createdAt: Date.now()
       }
+    };
+  }
+
+  processPayment(userId: string, listingId: string, input: PaymentAttemptInput): PaymentAttemptResult {
+    const idempotencyKey = input.idempotencyKey?.trim();
+
+    if (!idempotencyKey) {
+      throw new BadRequestException("Idempotency key is required");
+    }
+
+    const cachedResult = this.paymentResultsByIdempotencyKey.get(idempotencyKey);
+    if (cachedResult) {
+      return {
+        ...cachedResult,
+        replayed: true
+      };
+    }
+
+    const orderDraft = this.attemptCheckout(userId, listingId, {
+      setupId: input.setupId,
+      acceptedLicense: input.acceptedLicense,
+      acceptedVinPolicy: input.acceptedVinPolicy
+    }).order;
+
+    const paymentCreatedAt = Date.now();
+    const order: OrderRecord = {
+      id: randomUUID(),
+      listingId,
+      userId,
+      paymentId: "",
+      entitlementId: null,
+      versionId: orderDraft.versionId,
+      semanticLabel: orderDraft.semanticLabel,
+      versionTimestamp: orderDraft.versionTimestamp,
+      setup: orderDraft.setup,
+      status: input.simulateFailure ? "failed" : "created",
+      createdAt: paymentCreatedAt
+    };
+
+    const payment: PaymentRecord = {
+      id: randomUUID(),
+      orderId: order.id,
+      listingId,
+      userId,
+      status: input.simulateFailure ? "failed" : "succeeded",
+      idempotencyKey,
+      failureReason: input.simulateFailure ? "Simulated payment failure" : null,
+      createdAt: paymentCreatedAt
+    };
+
+    order.paymentId = payment.id;
+
+    let entitlement: EntitlementRecord | undefined;
+
+    if (payment.status === "succeeded") {
+      entitlement = this.createEntitlement(userId, listingId, { versionId: order.versionId });
+      order.entitlementId = entitlement.id;
+      this.appendNotification(userId, {
+        id: randomUUID(),
+        userId,
+        listingId,
+        message: `Payment confirmation email sent for order ${order.id}`,
+        createdAt: paymentCreatedAt
+      });
+    }
+
+    this.ordersById.set(order.id, order);
+    this.paymentsById.set(payment.id, payment);
+
+    const auditRecord: PaymentAuditRecord = {
+      id: randomUUID(),
+      orderId: order.id,
+      paymentId: payment.id,
+      actorUserId: userId,
+      outcome: payment.status,
+      createdAt: paymentCreatedAt,
+      note: payment.status === "succeeded" ? "Payment authorized and entitlement issued" : "Payment failed before entitlement issuance"
+    };
+
+    this.appendPaymentAudit(order.id, auditRecord);
+
+    const result: PaymentAttemptResult = {
+      payment,
+      order,
+      entitlement,
+      replayed: false
+    };
+
+    this.paymentResultsByIdempotencyKey.set(idempotencyKey, result);
+    return result;
+  }
+
+  getOrder(userId: string, orderId: string): {
+    order: OrderRecord;
+  } {
+    const order = this.ordersById.get(orderId);
+    if (!order) {
+      throw new NotFoundException("Order not found");
+    }
+
+    if (order.userId !== userId) {
+      throw new ForbiddenException("Order ownership required");
+    }
+
+    return { order };
+  }
+
+  getOrderAudit(userId: string, orderId: string): {
+    events: PaymentAuditRecord[];
+  } {
+    const order = this.ordersById.get(orderId);
+    if (!order) {
+      throw new NotFoundException("Order not found");
+    }
+
+    if (order.userId !== userId) {
+      throw new ForbiddenException("Order ownership required");
+    }
+
+    return {
+      events: [...(this.paymentAuditsByOrderId.get(orderId) ?? [])]
     };
   }
 
@@ -745,6 +920,11 @@ export class ListingsService {
   private appendNotification(userId: string, notification: NotificationRecord): void {
     const notifications = this.notificationsByUserId.get(userId) ?? [];
     this.notificationsByUserId.set(userId, [...notifications, notification]);
+  }
+
+  private appendPaymentAudit(orderId: string, event: PaymentAuditRecord): void {
+    const events = this.paymentAuditsByOrderId.get(orderId) ?? [];
+    this.paymentAuditsByOrderId.set(orderId, [...events, event]);
   }
 
   private getPublishMissingFields(input: {

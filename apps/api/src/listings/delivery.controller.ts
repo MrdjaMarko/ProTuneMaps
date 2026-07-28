@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, HttpCode, Inject, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, ForbiddenException, Get, HttpCode, Inject, Param, Patch, Post, Req, Res, UseGuards } from "@nestjs/common";
 import { AuthService } from "../auth/auth.service";
 import { AuthGuard } from "../auth/auth.guard";
 import { ListingsService } from "./listings.service";
@@ -60,6 +60,44 @@ export class DeliveryController {
     @Body() body: { setupId?: string; acceptedLicense?: boolean; acceptedVinPolicy?: boolean }
   ) {
     return this.listingsService.attemptCheckout(request.currentUserId, listingId, body);
+  }
+
+  @Post("listings/:listingId/payments")
+  @UseGuards(AuthGuard)
+  processPayment(
+    @Req() request: { currentUserId: string },
+    @Res({ passthrough: true }) response: { status: (code: number) => { statusCode: number } },
+    @Param("listingId") listingId: string,
+    @Body()
+    body: {
+      setupId?: string;
+      acceptedLicense?: boolean;
+      acceptedVinPolicy?: boolean;
+      idempotencyKey?: string;
+      simulateFailure?: boolean;
+    }
+  ) {
+    const paymentAttempt = this.listingsService.processPayment(request.currentUserId, listingId, body);
+    if (paymentAttempt.payment.status === "failed") {
+      response.status(402);
+    } else if (paymentAttempt.replayed) {
+      response.status(200);
+    } else {
+      response.status(201);
+    }
+    return paymentAttempt;
+  }
+
+  @Get("orders/:orderId")
+  @UseGuards(AuthGuard)
+  getOrder(@Req() request: { currentUserId: string }, @Param("orderId") orderId: string) {
+    return this.listingsService.getOrder(request.currentUserId, orderId);
+  }
+
+  @Get("orders/:orderId/audit")
+  @UseGuards(AuthGuard)
+  getOrderAudit(@Req() request: { currentUserId: string }, @Param("orderId") orderId: string) {
+    return this.listingsService.getOrderAudit(request.currentUserId, orderId);
   }
 
   @Post("admin/listings/:listingId/unpublish")
