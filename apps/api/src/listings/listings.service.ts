@@ -43,6 +43,23 @@ interface EntitlementRecord {
   upgradedAt: number | null;
 }
 
+interface ModerationEventRecord {
+  id: string;
+  listingId: string;
+  action: "unpublish" | "republish";
+  reason: string;
+  actorUserId: string;
+  createdAt: number;
+}
+
+interface NotificationRecord {
+  id: string;
+  userId: string;
+  listingId: string;
+  message: string;
+  createdAt: number;
+}
+
 interface CreateListingInput {
   title?: string;
   stage?: string;
@@ -98,6 +115,8 @@ export class ListingsService {
   private readonly listingsById = new Map<string, ListingRecord>();
   private readonly versionsByListingId = new Map<string, ListingVersionRecord[]>();
   private readonly entitlementsById = new Map<string, EntitlementRecord>();
+  private readonly moderationEventsByListingId = new Map<string, ModerationEventRecord[]>();
+  private readonly notificationsByUserId = new Map<string, NotificationRecord[]>();
 
   constructor(
     @Inject(CompatibilityService) private readonly compatibilityService: CompatibilityService,
@@ -243,6 +262,100 @@ export class ListingsService {
 
     listing.publishStatus = "published";
     return listing;
+  }
+
+  unpublishByAdmin(adminUserId: string, listingId: string, reason: string): {
+    listing: ListingRecord;
+    moderation: ModerationEventRecord;
+  } {
+    const listing = this.getListingById(listingId);
+    const normalizedReason = reason?.trim();
+
+    if (!normalizedReason) {
+      throw new BadRequestException("Reason is required");
+    }
+
+    listing.publishStatus = "draft";
+
+    const moderation: ModerationEventRecord = {
+      id: randomUUID(),
+      listingId: listing.id,
+      action: "unpublish",
+      reason: normalizedReason,
+      actorUserId: adminUserId,
+      createdAt: Date.now()
+    };
+
+    this.appendModerationEvent(listing.id, moderation);
+    this.appendNotification(listing.tunerUserId, {
+      id: randomUUID(),
+      userId: listing.tunerUserId,
+      listingId: listing.id,
+      message: `Your listing "${listing.title}" was unpublished: ${normalizedReason}`,
+      createdAt: moderation.createdAt
+    });
+
+    return {
+      listing,
+      moderation
+    };
+  }
+
+  republishByAdmin(adminUserId: string, listingId: string, reason: string): {
+    listing: ListingRecord;
+    moderation: ModerationEventRecord;
+  } {
+    const listing = this.getListingById(listingId);
+    const normalizedReason = reason?.trim();
+
+    if (!normalizedReason) {
+      throw new BadRequestException("Reason is required");
+    }
+
+    const missingFields = this.getPublishMissingFields({
+      title: listing.title,
+      stage: listing.stage,
+      priceAmount: listing.priceAmount,
+      requirements: listing.requirements
+    });
+
+    if (missingFields.length > 0) {
+      throw new BadRequestException(`Cannot republish: required fields missing or invalid (${missingFields.join(", ")})`);
+    }
+
+    listing.publishStatus = "published";
+
+    const moderation: ModerationEventRecord = {
+      id: randomUUID(),
+      listingId: listing.id,
+      action: "republish",
+      reason: normalizedReason,
+      actorUserId: adminUserId,
+      createdAt: Date.now()
+    };
+
+    this.appendModerationEvent(listing.id, moderation);
+    this.appendNotification(listing.tunerUserId, {
+      id: randomUUID(),
+      userId: listing.tunerUserId,
+      listingId: listing.id,
+      message: `Your listing "${listing.title}" was republished: ${normalizedReason}`,
+      createdAt: moderation.createdAt
+    });
+
+    return {
+      listing,
+      moderation
+    };
+  }
+
+  getModerationEvents(listingId: string): ModerationEventRecord[] {
+    this.getListingById(listingId);
+    return [...(this.moderationEventsByListingId.get(listingId) ?? [])];
+  }
+
+  getNotifications(userId: string): NotificationRecord[] {
+    return [...(this.notificationsByUserId.get(userId) ?? [])];
   }
 
   createVersion(tunerUserId: string, listingId: string, input: CreateListingVersionInput): ListingVersionRecord {
@@ -508,6 +621,16 @@ export class ListingsService {
 
   private isSemanticLabel(semanticLabel: string): boolean {
     return /^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(semanticLabel);
+  }
+
+  private appendModerationEvent(listingId: string, event: ModerationEventRecord): void {
+    const events = this.moderationEventsByListingId.get(listingId) ?? [];
+    this.moderationEventsByListingId.set(listingId, [...events, event]);
+  }
+
+  private appendNotification(userId: string, notification: NotificationRecord): void {
+    const notifications = this.notificationsByUserId.get(userId) ?? [];
+    this.notificationsByUserId.set(userId, [...notifications, notification]);
   }
 
   private getPublishMissingFields(input: {
